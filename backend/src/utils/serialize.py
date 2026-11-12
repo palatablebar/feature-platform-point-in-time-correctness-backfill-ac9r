@@ -69,6 +69,7 @@ def feature_version_out(version) -> dict:
         "change_note": version.change_note,
         "changed_by": version.changed_by,
         "snapshot": version.snapshot or {},
+        "effective_from": iso_z(version.effective_from),
         "created_at": iso_z(version.created_at),
     }
 
@@ -119,6 +120,7 @@ def backfill_out(task) -> dict:
         "range_end": iso_z(task.range_end),
         "base_watermark": iso_z(task.base_watermark),
         "feature_ids": task.feature_ids or [],
+        "feature_versions": task.feature_versions or {},
         "full_checksum": task.full_checksum,
         "incremental_checksum": task.incremental_checksum,
         "invariant_hold": task.invariant_hold,
@@ -127,6 +129,30 @@ def backfill_out(task) -> dict:
         "finished_at": iso_z(task.finished_at),
         "created_at": iso_z(task.created_at),
         "report": report,
+    }
+
+
+def backfill_result_out(row) -> dict:
+    return {
+        "id": row.id,
+        "backfill_id": row.backfill_id,
+        "sample_row_id": row.sample_row_id,
+        "job_id": row.job_id,
+        "label_row_id": row.label_row_id,
+        "entity_key": row.entity_key,
+        "label_time": iso_z(row.label_time),
+        "feature_id": row.feature_id,
+        "feature_code": row.feature_code,
+        "candidate_value": row.candidate_value,
+        "candidate_version_no": row.candidate_version_no,
+        "effective_from": iso_z(row.effective_from),
+        "previous_value": row.previous_value,
+        "previous_version_no": row.previous_version_no,
+        "status": row.status,
+        "is_conflict": row.is_conflict,
+        "decision_reason": row.decision_reason,
+        "applied_at": iso_z(row.applied_at),
+        "created_at": iso_z(row.created_at),
     }
 
 
@@ -173,6 +199,7 @@ def sample_row_out(row) -> dict:
         "label_time": iso_z(row.label_time),
         "label": row.label,
         "features": row.features_json,
+        "feature_provenance": row.feature_provenance or {},
         "leak_flags": row.leak_flags,
         "has_leak": row.has_leak,
         "no_event": row.no_event,

@@ -1,11 +1,23 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { createBackfill, getBackfill, listBackfills, runBackfill } from '../api/backfill'
-import type { BackfillTask } from '../types/backfill'
+import {
+  createBackfill,
+  fetchBackfillResults,
+  getBackfill,
+  listBackfills,
+  runBackfill,
+} from '../api/backfill'
+import type { BackfillResultRow, BackfillTask } from '../types/backfill'
 
 export const useBackfillStore = defineStore('backfill', () => {
   const tasks = ref<BackfillTask[]>([])
   const active = ref<BackfillTask | null>(null)
+  const resultRows = ref<BackfillResultRow[]>([])
+  const resultTotal = ref(0)
+  const resultFilter = ref<{ status: string | null; conflictOnly: boolean }>({
+    status: null,
+    conflictOnly: false,
+  })
 
   async function load() {
     const payload = await listBackfills()
@@ -17,6 +29,22 @@ export const useBackfillStore = defineStore('backfill', () => {
 
   async function select(id: number) {
     active.value = await getBackfill(id)
+    await loadResults(id)
+  }
+
+  async function loadResults(id: number = active.value?.id ?? 0) {
+    const payload = await fetchBackfillResults(id, {
+      status: resultFilter.value.status ?? undefined,
+      conflictOnly: resultFilter.value.conflictOnly,
+    })
+    resultRows.value = payload.items
+    resultTotal.value = payload.total
+  }
+
+  async function setResultFilter(filter: { status?: string | null; conflictOnly?: boolean }) {
+    if (filter.status !== undefined) resultFilter.value.status = filter.status
+    if (filter.conflictOnly !== undefined) resultFilter.value.conflictOnly = filter.conflictOnly
+    if (active.value) await loadResults(active.value.id)
   }
 
   async function create(payload: Record<string, unknown>) {
@@ -37,7 +65,7 @@ export const useBackfillStore = defineStore('backfill', () => {
     while (Date.now() - started < timeoutMs) {
       const task = await getBackfill(id)
       active.value = task
-      if (task.status === 'completed' || task.status === 'failed') {
+      if (['completed', 'failed', 'skipped'].includes(task.status)) {
         await load()
         return task
       }
@@ -46,5 +74,18 @@ export const useBackfillStore = defineStore('backfill', () => {
     throw new Error('回填任务等待超时')
   }
 
-  return { tasks, active, load, select, create, run, waitFor }
+  return {
+    tasks,
+    active,
+    resultRows,
+    resultTotal,
+    resultFilter,
+    load,
+    select,
+    loadResults,
+    setResultFilter,
+    create,
+    run,
+    waitFor,
+  }
 })

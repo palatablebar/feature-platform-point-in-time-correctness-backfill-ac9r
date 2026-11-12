@@ -94,20 +94,31 @@
         <div class="card-title"><h2>样本预览</h2><span class="op-index">sample_row</span></div>
         <table>
           <thead>
-            <tr><th>实体</th><th>标签时间</th><th>y</th><th>特征 JSON</th><th>泄漏</th></tr>
+            <tr><th>实体</th><th>标签时间</th><th>y</th><th>特征 JSON（含版本溯源）</th><th>泄漏</th></tr>
           </thead>
           <tbody>
             <tr v-for="row in report?.sample_preview ?? []" :key="row.id">
               <td>{{ row.entity_key }}</td>
               <td>{{ fmtShortTime(row.label_time) }}</td>
               <td>{{ row.label }}</td>
-              <td>{{ JSON.stringify(row.features) }}</td>
+              <td>
+                <div v-for="(value, code) in row.features" :key="code" class="feature-line mono">
+                  <span>{{ code }} = {{ value }}</span>
+                  <span class="tag" :class="provenanceTag(row, code)">
+                    {{ provenanceText(row, code) }}
+                  </span>
+                </div>
+              </td>
               <td :style="{ color: row.has_leak ? 'var(--annot)' : 'inherit' }">
                 {{ row.has_leak ? '越界' : row.no_event ? '无事件' : '通过' }}
               </td>
             </tr>
           </tbody>
         </table>
+        <p class="small muted" style="margin-top: var(--space-3)">
+          版本溯源标注每个特征列当前值来自哪个口径版本；被定向回填替换的列会显示来源回填任务，
+          其他列保持原版本不变（回填只改被点名的特征列）。
+        </p>
       </section>
 
       <ParamSnapshotCard :job="job" />
@@ -179,4 +190,24 @@ async function rerun() {
   rerunning.value = false
   if (!ok) loadingJob.value = false
 }
+
+function provenanceText(row: { feature_provenance?: Record<string, { version_no: number; backfill_task_id: number | null }> }, code: string): string {
+  const prov = row.feature_provenance?.[code]
+  if (!prov) return '版本未知'
+  return prov.backfill_task_id ? `v${prov.version_no} · 回填#${prov.backfill_task_id}` : `v${prov.version_no} · 样本构建`
+}
+
+function provenanceTag(row: { feature_provenance?: Record<string, { backfill_task_id: number | null }> }, code: string): string {
+  return row.feature_provenance?.[code]?.backfill_task_id ? 'tag-warn' : 'tag-ok'
+}
 </script>
+
+<style scoped>
+.feature-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.74rem;
+  padding: 1px 0;
+}
+</style>

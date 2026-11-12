@@ -46,6 +46,9 @@ class SampleRow(Base):
     label_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     label: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     features_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    # 逐特征列的版本溯源：{feature_code: {"version_no": int, "backfill_task_id": int|None,
+    # "applied_at": iso8601}}。回填只替换被点名的特征列，其他列的溯源保持不变。
+    feature_provenance: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     leak_flags: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     has_leak: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     no_event: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

@@ -9,3 +9,11 @@
 
 新增字段时：先改 `src/models/*.py`，再往本目录追加 `000N_*.sql` 快照并更新
 本文件，保证「模型 ↔ 迁移」可追溯。
+
+演进记录：
+
+* `0002_backfill_versioning.sql` — 版本化定向回填：
+  `feature_version.effective_from`、`sample_row.feature_provenance`、
+  `backfill_task.feature_versions` 三个新列 + `backfill_result` 台账表。
+  运行期由 `database.py:_apply_lightweight_migrations()` 对已存在的库幂等
+  补列（information_schema 判断）；新表由 `create_all` 直接创建。

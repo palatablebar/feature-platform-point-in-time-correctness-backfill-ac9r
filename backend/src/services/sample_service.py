@@ -215,17 +215,38 @@ def execute_job(db: Session, job: SampleJob) -> SampleJob:
         ]
         report_payload = build_report(specs, events, engine_rows, None, MATRIX_LIMIT)
 
+        # 初始版本溯源：每个样本的每个特征列记录其标签时间适用的特征版本
+        version_lookup: dict[tuple[int, datetime], int] = {}
+
+        def _version_no_for(feature_id: int, label_time) -> int:
+            key = (feature_id, label_time)
+            if key not in version_lookup:
+                version_lookup[key] = feature_service.version_at_label_time(
+                    db, feature_id, label_time
+                ).version_no
+            return version_lookup[key]
+
         db.execute(delete(SampleRow).where(SampleRow.job_id == job.id))
         for sample in report_payload.pop("_samples", None) or _rebuild_samples(specs, events, engine_rows):
+            sample_label_time = parse_range(sample["label_time"], "label_time")
+            provenance = {
+                spec.code: {
+                    "version_no": _version_no_for(spec.id, sample_label_time),
+                    "backfill_task_id": None,
+                    "applied_at": iso_z(utcnow()),
+                }
+                for spec in specs
+            }
             db.add(
                 SampleRow(
                     job_id=job.id,
                     label_row_id=sample["label_row_id"],
                     label_set_id=sample["label_set_id"],
                     entity_key=sample["entity_key"],
-                    label_time=parse_range(sample["label_time"], "label_time"),
+                    label_time=sample_label_time,
                     label=sample["label"],
                     features_json=sample["features"],
+                    feature_provenance=provenance,
                     leak_flags=sample["leak_flags"],
                     has_leak=sample["has_leak"],
                     no_event=sample["no_event"],

@@ -33,7 +33,12 @@ class FeatureDef(Base):
 
 
 class FeatureVersion(Base):
-    """Written on every definition change and on publish (audit trail)."""
+    """Written on every definition change and on publish (audit trail).
+
+    ``effective_from`` 是该口径版本对样本生效的起点（UTC）：回填候选值只对
+    ``label_time >= effective_from`` 的样本生效；晚于标签时间才生效的版本，
+    其迟到结果不得覆盖样本当前值。
+    """
 
     __tablename__ = "feature_version"
     __table_args__ = (UniqueConstraint("feature_id", "version_no", name="uq_feature_version"),)
@@ -44,4 +49,5 @@ class FeatureVersion(Base):
     snapshot: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     change_note: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     changed_by: Mapped[str] = mapped_column(String(160), nullable=False, default="system")
+    effective_from: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

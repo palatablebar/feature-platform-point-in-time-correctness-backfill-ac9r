@@ -74,6 +74,31 @@ class BackfillStatus(str, Enum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    SKIPPED = "skipped"  # 重复运行：已有结果，不新增也不覆盖
+
+
+class BackfillResultStatus(str, Enum):
+    """逐样本 × 特征的回填生效状态。
+
+    * ``replaced``          候选版本在样本标签时间生效，且新于样本当前值版本 → 替换该特征列；
+    * ``retained``          候选版本适用，但样本当前值版本相同或更新（含同值）→ 保留当前值；
+    * ``skipped_stale``     候选版本的生效时间晚于样本标签时间（旧回填迟到/口径已修正）
+                            → 保留当前值并跳过；若当前值来自更新版本则同时标 ``is_conflict``；
+    * ``skipped_duplicate`` 同一任务重复运行，该 (任务, 样本, 特征) 已有结果 → 不新增、不覆盖。
+    """
+
+    REPLACED = "replaced"
+    RETAINED = "retained"
+    SKIPPED_STALE = "skipped_stale"
+    SKIPPED_DUPLICATE = "skipped_duplicate"
+
+
+BACKFILL_RESULT_LABELS = {
+    BackfillResultStatus.REPLACED: "已替换",
+    BackfillResultStatus.RETAINED: "已保留",
+    BackfillResultStatus.SKIPPED_STALE: "跳过·旧版本迟到",
+    BackfillResultStatus.SKIPPED_DUPLICATE: "跳过·重复运行",
+}
 
 
 class MismatchReason(str, Enum):

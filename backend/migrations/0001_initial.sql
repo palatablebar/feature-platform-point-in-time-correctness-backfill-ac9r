@@ -35,13 +35,14 @@ CREATE TABLE IF NOT EXISTS feature_def (
 );
 
 CREATE TABLE IF NOT EXISTS feature_version (
-    id          SERIAL PRIMARY KEY,
-    feature_id  INTEGER NOT NULL REFERENCES feature_def(id),
-    version_no  INTEGER NOT NULL,
-    snapshot    JSON    NOT NULL DEFAULT '{}',
-    change_note VARCHAR(255) NOT NULL DEFAULT '',
-    changed_by  VARCHAR(160) NOT NULL DEFAULT 'system',
-    created_at  TIMESTAMPTZ DEFAULT now(),
+    id             SERIAL PRIMARY KEY,
+    feature_id     INTEGER NOT NULL REFERENCES feature_def(id),
+    version_no     INTEGER NOT NULL,
+    snapshot       JSON    NOT NULL DEFAULT '{}',
+    change_note    VARCHAR(255) NOT NULL DEFAULT '',
+    changed_by     VARCHAR(160) NOT NULL DEFAULT 'system',
+    effective_from TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_at     TIMESTAMPTZ DEFAULT now(),
     CONSTRAINT uq_feature_version UNIQUE (feature_id, version_no)
 );
 
@@ -102,18 +103,19 @@ CREATE TABLE IF NOT EXISTS sample_job (
 );
 
 CREATE TABLE IF NOT EXISTS sample_row (
-    id           SERIAL PRIMARY KEY,
-    job_id       INTEGER NOT NULL REFERENCES sample_job(id),
-    label_row_id INTEGER NOT NULL REFERENCES label_row(id),
-    label_set_id INTEGER NOT NULL,
-    entity_key   VARCHAR(48) NOT NULL,
-    label_time   TIMESTAMPTZ NOT NULL,
-    label        INTEGER NOT NULL DEFAULT 0,
-    features_json JSON NOT NULL DEFAULT '{}',
-    leak_flags   JSON NOT NULL DEFAULT '[]',
-    has_leak     BOOLEAN NOT NULL DEFAULT false,
-    no_event     BOOLEAN NOT NULL DEFAULT false,
-    created_at   TIMESTAMPTZ DEFAULT now(),
+    id                  SERIAL PRIMARY KEY,
+    job_id              INTEGER NOT NULL REFERENCES sample_job(id),
+    label_row_id        INTEGER NOT NULL REFERENCES label_row(id),
+    label_set_id        INTEGER NOT NULL,
+    entity_key          VARCHAR(48) NOT NULL,
+    label_time          TIMESTAMPTZ NOT NULL,
+    label               INTEGER NOT NULL DEFAULT 0,
+    features_json       JSON NOT NULL DEFAULT '{}',
+    feature_provenance  JSON NOT NULL DEFAULT '{}',
+    leak_flags          JSON NOT NULL DEFAULT '[]',
+    has_leak            BOOLEAN NOT NULL DEFAULT false,
+    no_event            BOOLEAN NOT NULL DEFAULT false,
+    created_at          TIMESTAMPTZ DEFAULT now(),
     CONSTRAINT uq_sample_row UNIQUE (job_id, label_row_id)
 );
 
@@ -127,6 +129,7 @@ CREATE TABLE IF NOT EXISTS backfill_task (
     range_end            TIMESTAMPTZ,
     base_watermark       TIMESTAMPTZ,
     feature_ids          JSON NOT NULL DEFAULT '[]',
+    feature_versions     JSON NOT NULL DEFAULT '{}',
     full_checksum        VARCHAR(64),
     incremental_checksum VARCHAR(64),
     invariant_hold       BOOLEAN,
@@ -136,6 +139,30 @@ CREATE TABLE IF NOT EXISTS backfill_task (
     finished_at          TIMESTAMPTZ,
     is_seed              BOOLEAN NOT NULL DEFAULT false,
     created_at           TIMESTAMPTZ DEFAULT now()
+);
+
+-- 逐样本 × 特征的版本化回填台账：同任务重复运行不新增、不覆盖（唯一约束兜底）
+CREATE TABLE IF NOT EXISTS backfill_result (
+    id                   SERIAL PRIMARY KEY,
+    backfill_id          INTEGER NOT NULL REFERENCES backfill_task(id),
+    sample_row_id        INTEGER NOT NULL,
+    job_id               INTEGER NOT NULL,
+    label_row_id         INTEGER NOT NULL,
+    entity_key           VARCHAR(48) NOT NULL,
+    label_time           TIMESTAMPTZ NOT NULL,
+    feature_id           INTEGER NOT NULL,
+    feature_code         VARCHAR(64) NOT NULL,
+    candidate_value      DOUBLE PRECISION NOT NULL,
+    candidate_version_no INTEGER NOT NULL,
+    effective_from       TIMESTAMPTZ NOT NULL,
+    previous_value       DOUBLE PRECISION,
+    previous_version_no  INTEGER,
+    status               VARCHAR(24) NOT NULL,
+    is_conflict          BOOLEAN NOT NULL DEFAULT false,
+    decision_reason      VARCHAR(255) NOT NULL DEFAULT '',
+    applied_at           TIMESTAMPTZ,
+    created_at           TIMESTAMPTZ DEFAULT now(),
+    CONSTRAINT uq_backfill_result UNIQUE (backfill_id, sample_row_id, feature_code)
 );
 
 CREATE TABLE IF NOT EXISTS audit_log (
@@ -155,3 +182,6 @@ CREATE INDEX IF NOT EXISTS ix_event_entity ON entity_event (entity_key);
 CREATE INDEX IF NOT EXISTS ix_event_ts ON entity_event (event_ts);
 CREATE INDEX IF NOT EXISTS ix_label_row_time ON label_row (label_time);
 CREATE INDEX IF NOT EXISTS ix_sample_row_job ON sample_row (job_id);
+CREATE INDEX IF NOT EXISTS ix_backfill_result_task ON backfill_result (backfill_id);
+CREATE INDEX IF NOT EXISTS ix_backfill_result_status ON backfill_result (status);
+CREATE INDEX IF NOT EXISTS ix_backfill_result_conflict ON backfill_result (is_conflict);

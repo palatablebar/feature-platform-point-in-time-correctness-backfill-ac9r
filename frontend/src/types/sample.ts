@@ -91,6 +91,12 @@ export interface FeatureSnapshot {
   amount_min: number | null
 }
 
+export interface FeatureProvenance {
+  version_no: number
+  backfill_task_id: number | null
+  applied_at: string | null
+}
+
 export interface SampleRow {
   id: number
   label_row_id: number
@@ -99,6 +105,7 @@ export interface SampleRow {
   label_time: string
   label: number
   features: Record<string, number>
+  feature_provenance?: Record<string, FeatureProvenance>
   leak_flags: LeakItem[]
   has_leak: boolean
   no_event: boolean

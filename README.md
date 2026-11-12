@@ -62,7 +62,27 @@
 ```bash
 docker compose exec -T backend python -m src.services.pit_engine
 docker compose exec -T backend python -m src.services.agg_engine
+docker compose exec -T backend python -m src.services.backfill_apply
 ```
+
+### C. 版本化定向回填 —— `backend/src/services/backfill_apply.py`
+
+口径修正后的定向回填**只替换被点名的特征列**，其他已确认特征值不参与重算
+（训练集无需整行重跑）。生效判定基于「特征版本生效时间 + 样本标签时间」：
+
+* **版本生效时间**：`feature_version.effective_from`，回填候选版本只对
+  `label_time >= effective_from` 的样本生效；
+* **逐样本 × 特征判定**（`decide_apply` 纯函数，可独立自测）：
+  * `replaced` —— 候选版本在标签时间已生效且新于样本当前值版本 → 只改写该特征列；
+  * `retained` —— 同版本结果到达，当前值保留；
+  * `skipped_stale` —— 旧回填迟到：候选版本生效晚于标签时间，**或**样本当前值
+    已来自更新版本（旧口径任务晚于新口径任务结束）→ 保留当前值并跳过；后者叠加
+    `is_conflict=true`，页面可核对「新值曾被旧值威胁」；
+  * `skipped_duplicate` —— 同一任务重复运行，已有结果不新增、不覆盖
+    （`uq_backfill_result` 唯一约束兜底），任务整体置 `skipped`；
+* **审计台账** `backfill_result`：每行记录候选值/候选版本/版本生效时间/
+  先前值/先前版本/状态/冲突/判定依据；样本侧 `sample_row.feature_provenance`
+  记录每个特征列当前值的版本与来源任务。
 
 ## 4. 快速启动
 
@@ -88,7 +108,7 @@ PostgreSQL 映射在宿主机 `17727`。
 | `/features/:id/versions` | 05 | 版本轨迹 + 审计轨迹 + 最近一次泄漏矩阵（复用 `LeakMatrix`） |
 | `/samples/new` | 02 | 样本构建（标签集/特征多选、参数快照预览，复用 `FeatureDefinitionCard` 口径摘要） |
 | `/samples/:id` | 03 | 点时间校验报告：泄漏矩阵 + 边界探针 + 泄漏明细 + 样本预览 |
-| `/backfills` | 04 | 回填任务：full vs incremental checksum 对照 + 差异明细 + 负例对照 |
+| `/backfills` | 04 | 回填任务：full vs incremental checksum 对照 + 差异明细 + 负例对照 + 样本行回填核对（replaced/retained/skipped_stale/冲突，可按状态与冲突筛选） |
 
 ## 6. 技术栈
 
@@ -115,9 +135,11 @@ gb-554/
 │   └── src/
 │       ├── config/            # settings / database / celery_app
 │       ├── constants/         # enums（共享枚举）/ error_codes / recipes（工序卡）
-│       ├── models/            # user, feature(+version), event, label(+row), sample(+row), backfill, audit_log
+│       ├── models/            # user, feature(+version+effective_from), event, label(+row),
+│       │                       # sample(+row, 带 feature_provenance), backfill(+result), audit_log
 │       ├── schemas/           # pydantic DTO
-│       ├── services/          # pit_engine ★ / agg_engine ★ / feature / sample / backfill / catalogue / auth
+│       ├── services/          # pit_engine ★ / agg_engine ★ / backfill_apply ★ /
+│       │                       # feature / sample / backfill / catalogue / auth
 │       ├── controllers/       # 处理函数（被 routes 调用）
 │       ├── routes/            # FastAPI APIRouter 装配
 │       ├── middlewares/       # auth / rbac / quota（限流+配额）/ audit_logger / error_handler
@@ -149,6 +171,7 @@ gb-554/
 | 聚合口径 `AggregateKind` | 同上 | 同上 | `pit_engine.aggregate()`、`WindowEditor.vue` |
 | 事件类型 `EventType` | 同上 | 同上 | seed、`schemas/feature.py`、`catalogue_service.py` |
 | 任务状态 `JobStatus` / `BackfillStatus` | 同上 | 同上 | `sample_service.py`、`backfill_service.py`、`StatusTag.vue` |
+| 回填结果状态 `BackfillResultStatus` | 同上 | 同上 | `backfill_apply.decide_apply()`、`BackfillResultPanel.vue` |
 | 泄漏类型 `LeakKind` | 同上 | 同上 | `pit_engine.detect_leak()`、`SampleDetailPage.vue` |
 | 错误码 `ErrorCode` | `src/constants/error_codes.py` | `src/constants/errorCodes.ts` | 后端 `AppError`；前端 `describeError()` |
 

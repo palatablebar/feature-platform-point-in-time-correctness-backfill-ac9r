@@ -29,6 +29,43 @@ export interface ChecksumReport {
   duration_ms: number
   mode?: string
   engine?: string
+  feature_versions?: Record<string, number>
+  apply_summary?: ApplySummary
+}
+
+export interface ApplySummary {
+  total: number
+  by_status: Record<string, number>
+  conflict_count: number
+  replaced_sample_rows: number
+}
+
+export interface BackfillResultRow {
+  id: number
+  backfill_id: number
+  sample_row_id: number
+  job_id: number
+  label_row_id: number
+  entity_key: string
+  label_time: string | null
+  feature_id: number
+  feature_code: string
+  candidate_value: number
+  candidate_version_no: number
+  effective_from: string | null
+  previous_value: number | null
+  previous_version_no: number | null
+  status: string
+  is_conflict: boolean
+  decision_reason: string
+  applied_at: string | null
+  created_at: string | null
+}
+
+export interface BackfillResultsPayload {
+  items: BackfillResultRow[]
+  total: number
+  summary: ApplySummary
 }
 
 export interface BackfillTask {
@@ -41,6 +78,7 @@ export interface BackfillTask {
   range_end: string | null
   base_watermark: string | null
   feature_ids: number[]
+  feature_versions: Record<string, number>
   full_checksum: string | null
   incremental_checksum: string | null
   invariant_hold: boolean | null
@@ -49,4 +87,5 @@ export interface BackfillTask {
   finished_at: string | null
   created_at: string | null
   report: ChecksumReport | null
+  apply_summary?: ApplySummary
 }

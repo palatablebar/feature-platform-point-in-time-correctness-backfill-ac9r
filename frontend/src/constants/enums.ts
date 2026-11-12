@@ -49,6 +49,22 @@ export const BACKFILL_STATUS: Record<string, string> = {
   running: '运行中',
   completed: '已完成',
   failed: '失败',
+  skipped: '跳过·重复运行',
+}
+
+/** 逐样本 × 特征的回填生效状态，与后端 BackfillResultStatus 一一对应。 */
+export const BACKFILL_RESULT_STATUS: Record<string, string> = {
+  replaced: '已替换',
+  retained: '已保留',
+  skipped_stale: '跳过·旧版本迟到',
+  skipped_duplicate: '跳过·重复运行',
+}
+
+export const BACKFILL_RESULT_TONE: Record<string, string> = {
+  replaced: 'tag-ok',
+  retained: 'tag-ink',
+  skipped_stale: 'tag-warn',
+  skipped_duplicate: 'tag-ink',
 }
 
 export const LEAK_KIND: Record<string, string> = {

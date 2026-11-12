@@ -23,6 +23,7 @@ export interface FeatureVersion {
   change_note: string
   changed_by: string
   snapshot: Record<string, unknown>
+  effective_from: string | null
   created_at: string | null
 }
 

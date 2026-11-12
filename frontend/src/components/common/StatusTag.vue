@@ -11,6 +11,7 @@ const toneClass = computed(() => {
   if (['completed', 'published'].includes(props.status)) return 'tag-ok'
   if (['failed', 'deprecated'].includes(props.status)) return 'tag-annot'
   if (['running'].includes(props.status)) return 'tag-warn'
+  if (['skipped'].includes(props.status)) return 'tag-ink'
   return 'tag-ink'
 })
 </script>

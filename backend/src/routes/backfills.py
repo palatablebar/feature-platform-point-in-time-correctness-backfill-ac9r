@@ -30,6 +30,18 @@ def get_backfill(backfill_id: int, db: Session = Depends(get_db), user=Depends(r
     return backfill_controller.get_backfill(db, user, backfill_id)
 
 
+@router.get("/{backfill_id}/results")
+def list_backfill_results(
+    backfill_id: int,
+    status: str | None = None,
+    conflict_only: bool = False,
+    db: Session = Depends(get_db),
+    user=Depends(require_reader),
+):
+    """逐样本 × 特征的回填生效台账（替换 / 保留 / 跳过 / 冲突）。"""
+    return backfill_controller.list_backfill_results(db, user, backfill_id, status, conflict_only)
+
+
 @router.post("/{backfill_id}/run")
 def run_backfill(
     backfill_id: int,

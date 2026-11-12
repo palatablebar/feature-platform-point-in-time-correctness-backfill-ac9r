@@ -36,6 +36,9 @@
                 <span class="small muted">
                   {{ fmtTime(task.range_start) }} → {{ fmtTime(task.range_end) }} · {{ task.mode }}
                 </span>
+                <span v-if="versionText(task)" class="small mono" style="display: block; color: var(--ink-soft)">
+                  锁定版本 {{ versionText(task) }}
+                </span>
               </span>
               <StatusTag :status="task.status" :labels="BACKFILL_STATUS" />
             </button>
@@ -77,6 +80,24 @@
 
     <ChecksumPanel :report="active?.report ?? null" />
 
+    <section class="card" v-if="active?.status === 'skipped'">
+      <div class="card-title"><h2>重复运行已跳过</h2><span class="op-index">idempotent</span></div>
+      <p class="small muted">
+        该任务已有回填结果台账：重复运行不新增结果行，也不覆盖样本当前值。下方「样本行回填核对」
+        保留首次运行的全部判定，可继续按状态筛选核对。
+      </p>
+    </section>
+
+    <BackfillResultPanel
+      :rows="store.resultRows"
+      :total="store.resultTotal"
+      :summary="active?.apply_summary ?? active?.report?.apply_summary ?? null"
+      :current-status="store.resultFilter.status"
+      :conflict-only="store.resultFilter.conflictOnly"
+      @filter="onStatusFilter"
+      @toggle-conflict="onToggleConflict"
+    />
+
     <section class="card" v-if="active?.report">
       <div class="card-title"><h2>差异明细</h2><span class="op-index">first diff</span></div>
       <p v-if="(active.report.differences ?? []).length === 0" class="muted small">
@@ -114,8 +135,15 @@
         </p>
       </div>
       <div class="margin-note" style="color: var(--ink-soft); border-left-color: var(--ink-line-strong)">
-        <span class="stamp" style="color: var(--ink-soft); border-color: var(--ink-line-strong)">窗口</span>
-        <p>1d / 7d / 30d 三窗口 × cnt·sum·max·last 四项统计，共 3 项/样本参与 checksum。</p>
+        <span class="stamp" style="color: var(--ink-soft); border-color: var(--ink-line-strong)">生效</span>
+        <p>
+          候选特征版本 effective_from ≤ 样本标签时间才允许写入；旧回填迟到时保留样本当前值并记
+          skipped_stale，当前值来自更新版本时再标冲突。只替换被点名的特征列，其他特征值不重算。
+        </p>
+      </div>
+      <div class="margin-note" style="color: var(--ink-soft); border-left-color: var(--ink-line-strong)">
+        <span class="stamp" style="color: var(--ink-soft); border-color: var(--ink-line-strong)">幂等</span>
+        <p>同一任务重复运行不新增 backfill_result 行、不覆盖样本值，任务置 skipped。</p>
       </div>
     </template>
   </AppShell>
@@ -130,6 +158,7 @@ import PageHeader from '../components/common/PageHeader.vue'
 import PermitNotice from '../components/common/PermitNotice.vue'
 import StatusTag from '../components/common/StatusTag.vue'
 import ChecksumPanel from '../components/backfill/ChecksumPanel.vue'
+import BackfillResultPanel from '../components/backfill/BackfillResultPanel.vue'
 import { BACKFILL_STATUS } from '../constants/enums'
 import { fetchMeta } from '../api/backfill'
 import { useApi } from '../hooks/useApi'
@@ -150,6 +179,20 @@ const running = ref(false)
 
 const tasks = computed(() => store.tasks)
 const active = computed(() => store.active)
+
+function versionText(task: { feature_versions?: Record<string, number> }): string {
+  const entries = Object.entries(task.feature_versions ?? {})
+  if (!entries.length) return ''
+  return entries.map(([featureId, version]) => `#${featureId}=v${version}`).join(' · ')
+}
+
+function onStatusFilter(status: string | null) {
+  run(() => store.setResultFilter({ status }))
+}
+
+function onToggleConflict() {
+  run(() => store.setResultFilter({ conflictOnly: !store.resultFilter.conflictOnly }))
+}
 
 onMounted(async () => {
   await run(() => store.load())

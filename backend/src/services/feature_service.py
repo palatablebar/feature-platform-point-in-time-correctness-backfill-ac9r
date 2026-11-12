@@ -16,7 +16,7 @@ from src.models import FeatureDef, FeatureVersion
 from src.services.pit_engine import FeatureSpec
 from src.utils.logger import log_event
 from src.utils.serialize import feature_out, feature_version_out
-from src.utils.timefmt import utcnow
+from src.utils.timefmt import ensure_utc, iso_z, utcnow
 
 WINDOW_SECONDS = {"1d": 86400, "7d": 7 * 86400, "30d": 30 * 86400}
 
@@ -34,6 +34,7 @@ def get_feature(db: Session, feature_id: int) -> FeatureDef:
 
 def snapshot(feature: FeatureDef) -> dict:
     return {
+        "id": feature.id,
         "code": feature.code,
         "name": feature.name,
         "event_type": feature.event_type,
@@ -77,12 +78,30 @@ def create_feature(db: Session, payload, user) -> FeatureDef:
             snapshot=snapshot(feature),
             change_note="初始版本",
             changed_by=user.email,
+            effective_from=utcnow(),
         )
     )
     db.commit()
     db.refresh(feature)
     log_event("FEATURE_CREATED", code=feature.code, by=user.email)
     return feature
+
+
+def _append_version(
+    feature: FeatureDef,
+    user_email: str,
+    change_note: str,
+    effective_from=None,
+) -> FeatureVersion:
+    """追加一条不可变版本快照；``effective_from`` 缺省取当前 UTC 时间。"""
+    return FeatureVersion(
+        feature_id=feature.id,
+        version_no=feature.version,
+        snapshot=snapshot(feature),
+        change_note=change_note,
+        changed_by=user_email,
+        effective_from=effective_from or utcnow(),
+    )
 
 
 def update_feature(db: Session, feature_id: int, payload, user, request=None) -> FeatureDef:
@@ -112,15 +131,19 @@ def update_feature(db: Session, feature_id: int, payload, user, request=None) ->
 
     feature.version = int(feature.version) + 1
     feature.updated_at = utcnow()
-    db.add(
-        FeatureVersion(
-            feature_id=feature.id,
-            version_no=feature.version,
-            snapshot=snapshot(feature),
-            change_note=change_note,
-            changed_by=user.email,
-        )
-    )
+    effective_from = None
+    if getattr(payload, "effective_from", None):
+        from src.utils.timefmt import BadTimestamp, parse_ts
+
+        try:
+            effective_from = parse_ts(payload.effective_from)
+        except BadTimestamp as exc:
+            raise AppError(
+                ErrorCode.BAD_TIMESTAMP,
+                message="effective_from 无法解析为时间戳",
+                detail={"raw": payload.effective_from},
+            ) from exc
+    db.add(_append_version(feature, user.email, change_note, effective_from))
     db.commit()
     db.refresh(feature)
     log_event(
@@ -138,15 +161,7 @@ def publish_feature(db: Session, feature_id: int, user) -> FeatureDef:
     feature.status = FeatureStatus.PUBLISHED.value
     feature.published_at = utcnow()
     feature.version = int(feature.version) + 1
-    db.add(
-        FeatureVersion(
-            feature_id=feature.id,
-            version_no=feature.version,
-            snapshot=snapshot(feature),
-            change_note="发布到样本构建可用",
-            changed_by=user.email,
-        )
-    )
+    db.add(_append_version(feature, user.email, "发布到样本构建可用", utcnow()))
     db.commit()
     db.refresh(feature)
     log_event("FEATURE_PUBLISHED", code=feature.code, version=feature.version, by=user.email)
@@ -235,3 +250,55 @@ def out(feature: FeatureDef) -> dict:
 
 def version_out(version: FeatureVersion) -> dict:
     return feature_version_out(version)
+
+
+# --------------------------------------------------------------------------- #
+# 版本生效时间（effective_from）解析：回填「按特征版本和样本标签时间判定何时生效」
+# --------------------------------------------------------------------------- #
+def version_at_label_time(db: Session, feature_id: int, label_time) -> FeatureVersion:
+    """返回 ``effective_from <= label_time`` 的最新版本；没有则回退到最早版本。
+
+    回退分支兼容历史数据（旧版本行可能没有显式生效时间，由迁移/seed 补成
+    特征创建时刻），保证任何样本都能解析到一个口径版本。
+    """
+    label_time = ensure_utc(label_time)
+    versions = list(
+        db.scalars(
+            select(FeatureVersion)
+            .where(FeatureVersion.feature_id == feature_id)
+            .order_by(FeatureVersion.version_no.asc())
+        )
+    )
+    if not versions:
+        raise AppError(ErrorCode.FEATURE_NOT_FOUND, detail={"feature_id": feature_id})
+    applicable = [version for version in versions if ensure_utc(version.effective_from) <= label_time]
+    return applicable[-1] if applicable else versions[0]
+
+
+def latest_version(db: Session, feature_id: int) -> FeatureVersion:
+    version = db.scalar(
+        select(FeatureVersion)
+        .where(FeatureVersion.feature_id == feature_id)
+        .order_by(FeatureVersion.version_no.desc())
+        .limit(1)
+    )
+    if version is None:
+        raise AppError(ErrorCode.FEATURE_NOT_FOUND, detail={"feature_id": feature_id})
+    return version
+
+
+def spec_from_version(version: FeatureVersion) -> FeatureSpec:
+    """把版本快照还原成 pit_engine 可计算的 FeatureSpec。"""
+    snap = version.snapshot or {}
+    return FeatureSpec(
+        id=int(snap.get("id") or 0),
+        code=str(snap["code"]),
+        name=str(snap.get("name", snap["code"])),
+        window_seconds=int(snap["window_seconds"]),
+        window_label=str(snap["window_label"]),
+        boundary=str(snap["boundary_policy"]),
+        aggregate=str(snap["aggregate_kind"]),
+        event_type=snap.get("event_type"),
+        amount_min=snap.get("amount_min"),
+        description=str(snap.get("description", "")),
+    )

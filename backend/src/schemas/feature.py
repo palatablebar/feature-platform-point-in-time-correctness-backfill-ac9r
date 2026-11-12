@@ -34,6 +34,9 @@ class FeatureUpdate(BaseModel):
     boundary_policy: BoundaryPolicy | None = None
     aggregate_kind: AggregateKind | None = None
     change_note: str = Field(default="", max_length=255)
+    # 新版本口径的生效起点（ISO-8601）；缺省为当前时刻。回填只对
+    # label_time >= effective_from 的样本应用该版本。
+    effective_from: str | None = None
 
 
 class FeatureOut(BaseModel):
@@ -61,4 +64,5 @@ class FeatureVersionOut(BaseModel):
     change_note: str
     changed_by: str
     snapshot: dict
+    effective_from: str | None
     created_at: str | None

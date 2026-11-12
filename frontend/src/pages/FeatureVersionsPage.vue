@@ -38,7 +38,7 @@
       <div class="card-title"><h2>版本轨迹</h2><span class="op-index">feature_version</span></div>
       <table>
         <thead>
-          <tr><th>版本</th><th>口径快照</th><th>备注</th><th>操作人</th><th>时间</th></tr>
+          <tr><th>版本</th><th>口径快照</th><th>生效时间 effective_from</th><th>备注</th><th>操作人</th><th>记录时间</th></tr>
         </thead>
         <tbody>
           <tr v-for="item in versions" :key="item.id">
@@ -49,6 +49,7 @@
                 {{ item.snapshot.boundary_policy }}
               </span>
             </td>
+            <td class="mono">{{ fmtTime(item.effective_from) }}</td>
             <td>{{ item.change_note }}</td>
             <td>{{ item.changed_by }}</td>
             <td>{{ fmtShortTime(item.created_at) }}</td>
@@ -112,7 +113,7 @@ import { useAuthStore } from '../stores/auth'
 import { useFeatureStore } from '../stores/feature'
 import type { AuditEntry, Feature, FeatureVersion } from '../types/feature'
 import type { LeakMatrixData, SampleJob } from '../types/sample'
-import { fmtShortTime } from '../utils/format'
+import { fmtShortTime, fmtTime } from '../utils/format'
 
 const route = useRoute()
 const auth = useAuthStore()
